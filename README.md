@@ -1,44 +1,67 @@
 # Quant Trading Strategies
-A collaborative project exploring quantitave trading strategies across Chinese A-shares, Hong Kong, and US markets.
+A collaborative project exploring quantitave trading strategies across US, Hong Kong, and Chinese A-shares markets.
 
-## Project Goals
+## Overview
 
-- Implement and learn fundamental quantitative trading strategies
-- Establish reliable backtesting frameworks to evaluate strategy performance
-- Test and optimize strategies in different market environments
-- Collaboratively improve quantitative analysis skills
+This repository contains implementations of various quantitative trading strategies across different markets:
 
-## Market Coverage
+- **A-Shares Market**: Strategies for China's mainland stock market
+- **Hong Kong Market**: Strategies for Hong Kong-listed stocks
+- **US Market**: Strategies for US equities
 
-### A-Shares Strategies
-- Moving average crossover strategy
-- Technical indicator combination strategy
+The goal is to learn quantitative trading principles by implementing basic strategies and testing them on historical data.
 
-### Hong Kong Market Strategies
-- Northbound capital flow tracking strategy
-- AH premium arbitrage
+## Implemented Strategies
 
-### US Market Strategies
-- Bollinger Bands mean reversion
-- Sector rotation strategy
+### A-Shares Market
+- **Double Moving Average**: Classic MA crossover strategy adapted for A-shares with T+1 trading rules
+- **RSI Strategy**: Relative Strength Index based mean-reversion strategy
 
-## How to Use
+### Hong Kong Market
+- **AH Premium**: Arbitrage strategy exploiting price differences between A-shares and H-shares of dual-listed companies
+- **Northbound Flow**: Strategy tracking capital flows from mainland China through Stock Connect
 
-1. Clone the repository
+### US Market
+- **Bollinger Bands**: Mean reversion strategy using Bollinger Bands
+- **Momentum Factor**: Factor-based momentum strategy with periodic rebalancing
+
+## Getting Started
+
+### Prerequisites
+- Python 3.8+
+- Required packages listed in `requirements.txt`
+
+### Installation
+1. Clone the repository:
 ```bash
-git clone https://github.com/username/quantitative-trading.git
+git clone https://github.com/yourusername/ai4fin-quantitative-trading.git
+cd ai4fin-quantitative-trading
 ```
 
-2. Install dependencies
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Run backtest
+### Running a Backtest
 ```bash
-python backtest.py --strategy=moving_average --market=a_shares
+python backtest.py --strategy a_shares/strategies/double_moving_average.py --data path/to/data.csv --market a_shares
 ```
+
+## Contributing
+
+This is a learning repository - contributions, improvements, and discussions are welcome!
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-strategy`)
+3. Commit your changes (`git commit -m 'Add some amazing strategy'`)
+4. Push to the branch (`git push origin feature/amazing-strategy`)
+5. Open a Pull Request
 
 ## Disclaimer
 
-The strategies in this repository are for learning and research purposes only and do not constitute investment advice. All backtest results are based on historical data and do not guarantee future performance.
+This repository is for educational purposes only. The strategies are meant for learning and not as investment advice. Always do your own research before actual trading.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

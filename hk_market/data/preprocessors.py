@@ -1,14 +1,14 @@
 # preprocessors.py
-# Data preprocessing utilities for US market
+# Data preprocessing utilities for Hong Kong market
 
 import pandas as pd
 import numpy as np
 from scipy import stats
 import datetime as dt
 
-class USMarketPreprocessor:
+class HKStockPreprocessor:
     """
-    Preprocessor for US market data
+    Preprocessor for Hong Kong stock data
     """
     
     def __init__(self):
@@ -171,15 +171,12 @@ class USMarketPreprocessor:
         if all(col in data.columns for col in ['high', 'low', 'close']):
             data = self.add_atr(data)
         
-        # Add volume indicators
+        # Add extra indicators
         data = self.add_volume_indicators(data)
-        
-        # Add momentum indicators
-        data = self.add_momentum_indicators(data)
         
         return data
     
-    def add_moving_averages(self, df, periods=[5, 10, 20, 50, 200]):
+    def add_moving_averages(self, df, periods=[5, 10, 20, 60]):
         """
         Add moving averages to the data
         
@@ -200,14 +197,6 @@ class USMarketPreprocessor:
         # Add exponential moving averages
         for period in periods:
             data[f'ema_{period}'] = data['close'].ewm(span=period, adjust=False).mean()
-        
-        # Add golden/death cross signals
-        if 50 in periods and 200 in periods:
-            # Golden cross: 50-day MA crosses above 200-day MA
-            data['golden_cross'] = (data['ma_50'] > data['ma_200']) & (data['ma_50'].shift(1) <= data['ma_200'].shift(1))
-            
-            # Death cross: 50-day MA crosses below 200-day MA
-            data['death_cross'] = (data['ma_50'] < data['ma_200']) & (data['ma_50'].shift(1) >= data['ma_200'].shift(1))
         
         return data
     
@@ -241,10 +230,6 @@ class USMarketPreprocessor:
             # Calculate RS and RSI
             rs = avg_gain / avg_loss
             data[f'rsi_{period}'] = 100 - (100 / (1 + rs))
-            
-            # Add RSI signal columns
-            data[f'rsi_{period}_oversold'] = data[f'rsi_{period}'] < 30
-            data[f'rsi_{period}_overbought'] = data[f'rsi_{period}'] > 70
         
         return data
     
@@ -279,10 +264,6 @@ class USMarketPreprocessor:
         # Calculate Bandwidth
         data['bb_bandwidth'] = (data['bb_upper'] - data['bb_lower']) / data['bb_middle']
         
-        # Add Bollinger Band signals
-        data['bb_upper_touch'] = (data['high'] >= data['bb_upper']) & (data['high'].shift(1) < data['bb_upper'].shift(1))
-        data['bb_lower_touch'] = (data['low'] <= data['bb_lower']) & (data['low'].shift(1) > data['bb_lower'].shift(1))
-        
         return data
     
     def add_macd(self, df, fast_period=12, slow_period=26, signal_period=9):
@@ -314,10 +295,6 @@ class USMarketPreprocessor:
         # Calculate histogram
         data['macd_hist'] = data['macd'] - data['macd_signal']
         
-        # Add MACD signals
-        data['macd_cross_above'] = (data['macd'] > data['macd_signal']) & (data['macd'].shift(1) <= data['macd_signal'].shift(1))
-        data['macd_cross_below'] = (data['macd'] < data['macd_signal']) & (data['macd'].shift(1) >= data['macd_signal'].shift(1))
-        
         return data
     
     def add_atr(self, df, period=14):
@@ -343,9 +320,6 @@ class USMarketPreprocessor:
         # Calculate ATR
         data[f'atr_{period}'] = data['tr'].rolling(window=period).mean()
         
-        # Calculate ATR percentage (ATR/Close)
-        data[f'atr_pct_{period}'] = data[f'atr_{period}'] / data['close'] * 100
-        
         # Drop temporary columns
         data = data.drop(['tr0', 'tr1', 'tr2', 'tr'], axis=1)
         
@@ -370,205 +344,185 @@ class USMarketPreprocessor:
             return data
         
         # Add volume moving averages
-        for period in [5, 10, 20, 50]:
+        for period in [5, 10, 20]:
             data[f'volume_ma_{period}'] = data['volume'].rolling(window=period).mean()
         
         # Add volume relative to moving average
-        data['volume_ratio_20'] = data['volume'] / data['volume_ma_20']
+        data['volume_ratio'] = data['volume'] / data['volume_ma_20']
         
         # Add volume rate of change
         data['volume_roc'] = data['volume'].pct_change(1) * 100
         
         # Add On-Balance Volume (OBV)
         data['obv'] = 0
-        data.loc[1:, 'obv'] = np.where(
-            data['close'].iloc[1:].values > data['close'].iloc[:-1].values,
-            data['volume'].iloc[1:].values,
-            np.where(
-                data['close'].iloc[1:].values < data['close'].iloc[:-1].values,
-                -data['volume'].iloc[1:].values,
-                0
-            )
-        )
+        data.loc[1:, 'obv'] = (
+            (data['close'] > data['close'].shift(1)).astype(int) * 2 - 1
+        ) * data['volume'].loc[1:]
         data['obv'] = data['obv'].cumsum()
         
         # Add Chaikin Money Flow (CMF)
         period = 20
-        mf_multiplier = ((data['close'] - data['low']) - (data['high'] - data['close'])) / (data['high'] - data['low'])
+        mf_multiplier = (
+            (data['close'] - data['low']) - (data['high'] - data['close'])
+        ) / (data['high'] - data['low'])
         mf_volume = mf_multiplier * data['volume']
-        data['cmf'] = mf_volume.rolling(window=period).sum() / data['volume'].rolling(window=period).sum()
-        
-        # Add volume spike indicator
-        data['volume_spike'] = data['volume'] > data['volume_ma_20'] * 2
-        
-        return data
-    
-    def add_momentum_indicators(self, df):
-        """
-        Add momentum-based indicators
-        
-        Parameters:
-        df (DataFrame): Price data
-        
-        Returns:
-        DataFrame: Data with momentum indicators
-        """
-        # Make a copy
-        data = df.copy()
-        
-        # Add price momentum for different periods
-        for period in [1, 5, 10, 20, 60, 120, 252]:
-            data[f'momentum_{period}d'] = data['close'].pct_change(period) * 100
-        
-        # Add Rate of Change (ROC)
-        for period in [10, 20, 60]:
-            data[f'roc_{period}'] = (data['close'] / data['close'].shift(period) - 1) * 100
-        
-        # Add Stochastic Oscillator
-        period = 14
-        data['stoch_k'] = 100 * (data['close'] - data['low'].rolling(window=period).min()) / (data['high'].rolling(window=period).max() - data['low'].rolling(window=period).min())
-        data['stoch_d'] = data['stoch_k'].rolling(window=3).mean()
-        
-        # Add stochastic signals
-        data['stoch_oversold'] = data['stoch_k'] < 20
-        data['stoch_overbought'] = data['stoch_k'] > 80
-        data['stoch_cross_above'] = (data['stoch_k'] > data['stoch_d']) & (data['stoch_k'].shift(1) <= data['stoch_d'].shift(1))
-        data['stoch_cross_below'] = (data['stoch_k'] < data['stoch_d']) & (data['stoch_k'].shift(1) >= data['stoch_d'].shift(1))
-        
-        return data
-    
-    def add_trend_indicators(self, df):
-        """
-        Add trend identification indicators
-        
-        Parameters:
-        df (DataFrame): Price data
-        
-        Returns:
-        DataFrame: Data with trend indicators
-        """
-        # Make a copy
-        data = df.copy()
-        
-        # Add ADX (Average Directional Index)
-        period = 14
-        
-        # Calculate +DM and -DM
-        data['up_move'] = data['high'] - data['high'].shift(1)
-        data['down_move'] = data['low'].shift(1) - data['low']
-        
-        data['pos_dm'] = np.where((data['up_move'] > data['down_move']) & (data['up_move'] > 0), data['up_move'], 0)
-        data['neg_dm'] = np.where((data['down_move'] > data['up_move']) & (data['down_move'] > 0), data['down_move'], 0)
-        
-        # Calculate ATR components
-        data['tr'] = np.maximum(
-            np.maximum(
-                data['high'] - data['low'],
-                abs(data['high'] - data['close'].shift(1))
-            ),
-            abs(data['low'] - data['close'].shift(1))
+        data['cmf'] = (
+            mf_volume.rolling(window=period).sum() / 
+            data['volume'].rolling(window=period).sum()
         )
         
-        # Calculate smoothed TR, +DM, and -DM
-        data['smoothed_tr'] = data['tr'].rolling(window=period).sum()
-        data['smoothed_pos_dm'] = data['pos_dm'].rolling(window=period).sum()
-        data['smoothed_neg_dm'] = data['neg_dm'].rolling(window=period).sum()
-        
-        # Calculate +DI and -DI
-        data['pos_di'] = 100 * data['smoothed_pos_dm'] / data['smoothed_tr']
-        data['neg_di'] = 100 * data['smoothed_neg_dm'] / data['smoothed_tr']
-        
-        # Calculate directional movement index (DX)
-        data['dx'] = 100 * abs(data['pos_di'] - data['neg_di']) / (data['pos_di'] + data['neg_di'])
-        
-        # Calculate ADX
-        data['adx'] = data['dx'].rolling(window=period).mean()
-        
-        # Add ADX trend signals
-        data['strong_trend'] = data['adx'] > 25
-        data['weak_trend'] = data['adx'] < 20
-        
-        # Clean up temporary columns
-        data = data.drop(['up_move', 'down_move', 'pos_dm', 'neg_dm', 'tr', 'smoothed_tr', 
-                          'smoothed_pos_dm', 'smoothed_neg_dm', 'dx'], axis=1)
-        
-        # Add Aroon Oscillator
-        period = 25
-        data['aroon_up'] = 100 * (period - data['high'].rolling(period).apply(lambda x: x.argmax())) / period
-        data['aroon_down'] = 100 * (period - data['low'].rolling(period).apply(lambda x: x.argmin())) / period
-        data['aroon_osc'] = data['aroon_up'] - data['aroon_down']
-        
-        # Add trend signals based on Aroon
-        data['aroon_bullish'] = data['aroon_osc'] > 50
-        data['aroon_bearish'] = data['aroon_osc'] < -50
-        
         return data
     
-    def add_volatility_indicators(self, df):
+    def add_gap_indicators(self, df):
         """
-        Add volatility indicators
+        Add price gap indicators for Hong Kong stocks
         
         Parameters:
         df (DataFrame): Price data
         
         Returns:
-        DataFrame: Data with volatility indicators
+        DataFrame: Data with gap indicators
         """
         # Make a copy
         data = df.copy()
         
-        # Calculate historical volatility
-        for period in [10, 20, 60]:
-            # Daily returns
-            returns = data['close'].pct_change()
-            
-            # Calculate standard deviation of returns
-            data[f'volatility_{period}d'] = returns.rolling(window=period).std() * np.sqrt(252) * 100  # Annualized
+        # Check if required columns exist
+        if not all(col in data.columns for col in ['open', 'close']):
+            print("Warning: DataFrame missing 'open' or 'close' columns for gap indicators")
+            return data
         
-        # Add volatility ratio (current volatility / longer-term volatility)
-        data['volatility_ratio'] = data['volatility_20d'] / data['volatility_60d']
+        # Calculate overnight gap
+        data['gap'] = data['open'] / data['close'].shift(1) - 1
         
-        # Add volatility breakout signals
-        data['volatility_breakout'] = data['volatility_10d'] > data['volatility_60d'] * 1.5  # 50% higher than baseline
+        # Add gap categories
+        data['gap_up'] = (data['gap'] > 0.02).astype(int)  # More than 2% gap up
+        data['gap_down'] = (data['gap'] < -0.02).astype(int)  # More than 2% gap down
+        
+        # Add gap fill indicators
+        data['gap_filled'] = ((data['gap'] > 0) & (data['low'] <= data['close'].shift(1))) | \
+                             ((data['gap'] < 0) & (data['high'] >= data['close'].shift(1)))
+        data['gap_filled'] = data['gap_filled'].astype(int)
         
         return data
     
-    def add_sector_relative_strength(self, df, sector_df):
+    def add_ah_premium_indicators(self, df):
         """
-        Add sector relative strength indicators
+        Add A-H premium indicators for dual-listed stocks
+        
+        Parameters:
+        df (DataFrame): Data with A-H premium column
+        
+        Returns:
+        DataFrame: Data with A-H premium indicators
+        """
+        # Make a copy
+        data = df.copy()
+        
+        # Check if AH premium column exists
+        if 'ah_premium' not in data.columns:
+            print("Warning: DataFrame missing 'ah_premium' column")
+            return data
+        
+        # Add moving average of AH premium
+        for period in [5, 10, 20]:
+            data[f'ah_premium_ma_{period}'] = data['ah_premium'].rolling(window=period).mean()
+        
+        # Add premium z-score (how many standard deviations from historical mean)
+        # Use longer history (120 trading days ≈ 6 months) for more stable baseline
+        rolling_mean = data['ah_premium'].rolling(window=120).mean()
+        rolling_std = data['ah_premium'].rolling(window=120).std()
+        data['ah_premium_zscore'] = (data['ah_premium'] - rolling_mean) / rolling_std
+        
+        # Add premium extreme indicators
+        data['ah_premium_extreme_high'] = (data['ah_premium_zscore'] > 2).astype(int)
+        data['ah_premium_extreme_low'] = (data['ah_premium_zscore'] < -2).astype(int)
+        
+        # Add premium change
+        data['ah_premium_change'] = data['ah_premium'].diff()
+        
+        # Add premium trend reversal indicators
+        # If premium has been rising for 3 days and then falls, or vice versa
+        data['ah_premium_up_streak'] = (data['ah_premium_change'] > 0).astype(int)
+        data['ah_premium_down_streak'] = (data['ah_premium_change'] < 0).astype(int)
+        
+        # Count consecutive days of premium rising/falling
+        for i in range(1, len(data)):
+            if data['ah_premium_up_streak'].iloc[i] == 1:
+                data.iloc[i, data.columns.get_loc('ah_premium_up_streak')] = \
+                    data['ah_premium_up_streak'].iloc[i-1] + 1 if data['ah_premium_up_streak'].iloc[i-1] > 0 else 1
+            elif data['ah_premium_down_streak'].iloc[i] == 1:
+                data.iloc[i, data.columns.get_loc('ah_premium_down_streak')] = \
+                    data['ah_premium_down_streak'].iloc[i-1] + 1 if data['ah_premium_down_streak'].iloc[i-1] > 0 else 1
+        
+        # Add premium reversal indicator
+        data['ah_premium_reversal_up'] = ((data['ah_premium_down_streak'].shift(1) >= 3) & 
+                                          (data['ah_premium_change'] > 0)).astype(int)
+        data['ah_premium_reversal_down'] = ((data['ah_premium_up_streak'].shift(1) >= 3) & 
+                                            (data['ah_premium_change'] < 0)).astype(int)
+        
+        return data
+    
+    def add_northbound_flow_indicators(self, df, northbound_df):
+        """
+        Add northbound flow indicators to stock data
         
         Parameters:
         df (DataFrame): Stock price data
-        sector_df (DataFrame): Sector ETF price data for stock's sector
+        northbound_df (DataFrame): Northbound flow data
         
         Returns:
-        DataFrame: Data with sector relative strength indicators
+        DataFrame: Stock data with northbound flow indicators
         """
         # Make a copy
         data = df.copy()
         
-        # Check inputs
-        if 'close' not in data.columns or 'close' not in sector_df.columns:
-            print("Warning: DataFrames must have 'close' columns")
+        # Ensure northbound_df has a DatetimeIndex
+        if not isinstance(northbound_df.index, pd.DatetimeIndex):
+            if 'date' in northbound_df.columns:
+                northbound_df = northbound_df.set_index('date')
+            else:
+                print("Warning: northbound_df must have a DatetimeIndex or 'date' column")
+                return data
+        
+        # Check if northbound flow column exists
+        if 'northbound_flow' not in northbound_df.columns:
+            print("Warning: northbound_df missing 'northbound_flow' column")
             return data
         
-        # Calculate stock and sector returns
-        stock_returns = data['close'].pct_change()
-        sector_returns = sector_df['close'].pct_change()
+        # Ensure data has a DatetimeIndex
+        if not isinstance(data.index, pd.DatetimeIndex):
+            if 'date' in data.columns:
+                data = data.set_index('date')
+            else:
+                print("Warning: df must have a DatetimeIndex or 'date' column")
+                return data
         
-        # Calculate relative strength (stock return - sector return)
-        data['sector_rs'] = stock_returns - sector_returns
+        # Add northbound flow to stock data
+        data = data.join(northbound_df[['northbound_flow']], how='left')
         
-        # Calculate cumulative relative strength
-        data['sector_rs_cumulative'] = (1 + data['sector_rs']).cumprod()
+        # Fill missing values with 0
+        data['northbound_flow'] = data['northbound_flow'].fillna(0)
         
-        # Add relative strength moving averages
-        for period in [5, 20, 60]:
-            data[f'sector_rs_{period}d'] = data['sector_rs'].rolling(window=period).mean()
+        # Add moving averages of northbound flow
+        for period in [5, 10, 20]:
+            data[f'northbound_flow_ma_{period}'] = data['northbound_flow'].rolling(window=period).mean()
         
-        # Add relative strength trend indicators
-        data['sector_rs_improving'] = data['sector_rs_5d'] > data['sector_rs_20d']
-        data['sector_rs_deteriorating'] = data['sector_rs_5d'] < data['sector_rs_20d']
+        # Add northbound flow momentum (rate of change)
+        data['northbound_flow_roc'] = data['northbound_flow'].pct_change(5)
+        
+        # Add northbound flow z-score (how many standard deviations from historical mean)
+        rolling_mean = data['northbound_flow'].rolling(window=60).mean()
+        rolling_std = data['northbound_flow'].rolling(window=60).std()
+        data['northbound_flow_zscore'] = (data['northbound_flow'] - rolling_mean) / rolling_std
+        
+        # Add extreme flow indicators
+        data['northbound_flow_extreme_high'] = (data['northbound_flow_zscore'] > 2).astype(int)
+        data['northbound_flow_extreme_low'] = (data['northbound_flow_zscore'] < -2).astype(int)
+        
+        # Add flow direction change indicators
+        data['northbound_flow_direction'] = np.sign(data['northbound_flow'])
+        data['northbound_flow_direction_change'] = (data['northbound_flow_direction'] != 
+                                                    data['northbound_flow_direction'].shift(1)).astype(int)
         
         return data
     
@@ -589,12 +543,11 @@ class USMarketPreprocessor:
         # Identify numeric columns
         numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Exclude boolean indicators and price/volume columns from normalization
-        exclude_patterns = ['_cross', '_oversold', '_overbought', '_spike', '_bullish', '_bearish', 
-                           'open', 'high', 'low', 'close', 'volume', 'adj_close']
+        # Exclude certain columns from normalization
+        exclude_cols = [col for col in numeric_cols if 'gap_' in col or '_extreme_' in col]
         
         # Filter columns to normalize
-        cols_to_normalize = [col for col in numeric_cols if not any(pattern in col for pattern in exclude_patterns)]
+        cols_to_normalize = [col for col in numeric_cols if col not in exclude_cols]
         
         # Apply normalization
         if method == 'zscore':
@@ -637,7 +590,7 @@ if __name__ == "__main__":
     }, index=dates)
     
     # Create preprocessor
-    preprocessor = USMarketPreprocessor()
+    preprocessor = HKStockPreprocessor()
     
     # Clean data
     cleaned_data = preprocessor.clean_data(df)
@@ -645,8 +598,25 @@ if __name__ == "__main__":
     # Add technical indicators
     data_with_indicators = preprocessor.add_technical_indicators(cleaned_data)
     
+    # Add gap indicators
+    data_with_gap = preprocessor.add_gap_indicators(data_with_indicators)
+    
     # Print first few rows
-    print(data_with_indicators.head())
+    print(data_with_gap.head())
     
     # Print column names
-    print("\nColumns:", data_with_indicators.columns.tolist())
+    print("\nColumns:", data_with_gap.columns.tolist())
+    
+    # Create sample A-H premium data
+    ah_premium = np.random.normal(0, 5, len(dates)).cumsum() % 20 - 10
+    
+    # Add to DataFrame
+    df['ah_premium'] = ah_premium
+    
+    # Add A-H premium indicators
+    data_with_ah = preprocessor.add_ah_premium_indicators(df)
+    
+    # Print A-H premium indicators
+    print("\nA-H Premium Indicators:")
+    ah_cols = [col for col in data_with_ah.columns if 'ah_premium' in col]
+    print(data_with_ah[ah_cols].head())
